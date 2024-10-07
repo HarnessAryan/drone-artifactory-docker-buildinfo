@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/kelseyhightower/envconfig"
@@ -26,6 +27,7 @@ type Args struct {
 	PEMFileContents string `envconfig:"PLUGIN_PEM_FILE_CONTENTS"`
 	PEMFilePath     string `envconfig:"PLUGIN_PEM_FILE_PATH"`
 	Level           string `envconfig:"PLUGIN_LOG_LEVEL"`
+	RepoURL         string `envconfig:"PLUGIN_REPO_URL"`
 }
 
 type Artifact struct {
@@ -120,6 +122,37 @@ func Exec(ctx context.Context, args Args) error {
 
 	if err := runCommand(cmdArgs); err != nil {
 		return fmt.Errorf("error executing jfrog rt build-docker-create command: %v", err)
+	}
+
+	originalDir, err := os.Getwd() // Save the current directory
+	if err != nil {
+		return fmt.Errorf("error getting current directory: %v", err)
+	}
+
+	fmt.Printf("Cloning the repository from %s\n", args.RepoURL)
+	cloneCmd := exec.Command("git", "clone", args.RepoURL)
+	cloneCmd.Stdout = os.Stdout
+	cloneCmd.Stderr = os.Stderr
+	if err := cloneCmd.Run(); err != nil {
+		return fmt.Errorf("error cloning repository: %v", err)
+	}
+
+	// Change directory to the cloned repository folder
+	repoDir := strings.TrimSuffix(filepath.Base(args.RepoURL), ".git")
+	if err := os.Chdir(repoDir); err != nil {
+		return fmt.Errorf("error changing directory to cloned repository: %v", err)
+	}
+
+	// Run the jfrog rt build-add-git command
+	fmt.Printf("Running jfrog rt build-add-git in %s\n", repoDir)
+	addGitCmd := []string{"jfrog", "rt", "build-add-git", args.BuildName, args.BuildNumber}
+	if err := runCommand(addGitCmd); err != nil {
+		return fmt.Errorf("error running jfrog rt build-add-git: %v", err)
+	}
+
+	// Change back to the original directory
+	if err := os.Chdir(originalDir); err != nil {
+		return fmt.Errorf("error changing back to the original directory: %v", err)
 	}
 
 	cmdArgs = []string{"jfrog", "rt", "build-publish", "--build-url=" + args.BuildURL, "--url=" + sanitizedURL, args.BuildName, args.BuildNumber}
