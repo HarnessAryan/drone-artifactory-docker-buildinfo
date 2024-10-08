@@ -26,6 +26,10 @@ type Args struct {
 	PEMFileContents string `envconfig:"PLUGIN_PEM_FILE_CONTENTS"`
 	PEMFilePath     string `envconfig:"PLUGIN_PEM_FILE_PATH"`
 	Level           string `envconfig:"PLUGIN_LOG_LEVEL"`
+	CommitSha       string `envconfig:"DRONE_COMMIT_SHA"`
+	RepoURL         string `envconfig:"DRONE_GIT_HTTP_URL"`
+	BranchName      string `envconfig:"DRONE_REPO_BRANCH"`
+	CommitMessage   string `envconfig:"DRONE_COMMIT_MESSAGE"`
 }
 
 type Artifact struct {
@@ -47,6 +51,7 @@ func main() {
 }
 
 func Exec(ctx context.Context, args Args) error {
+	
 	repo, imageName, imageTag, err := parseDockerImage(args.DockerImage)
 	if err != nil {
 		return fmt.Errorf("error parsing Docker image: %v", err)
@@ -120,6 +125,13 @@ func Exec(ctx context.Context, args Args) error {
 
 	if err := runCommand(cmdArgs); err != nil {
 		return fmt.Errorf("error executing jfrog rt build-docker-create command: %v", err)
+	}
+	
+	if args.RepoURL != "" && args.BranchName != "" && args.CommitSha != "" {
+		cmdArgs = []string{"jfrog", "rt", "build-add-git", args.BuildName, args.BuildNumber}
+		if err := runCommand(cmdArgs); err != nil {
+			return fmt.Errorf("error executing jfrog rt build-add-git command: %v", err)
+		}
 	}
 
 	cmdArgs = []string{"jfrog", "rt", "build-publish", "--build-url=" + args.BuildURL, "--url=" + sanitizedURL, args.BuildName, args.BuildNumber}
